@@ -1,0 +1,104 @@
+import pexpect
+import os
+import difflib
+
+# Device connection details
+ip_address = '192.168.56.101'
+username = 'cisco'
+password = 'cisco123!'
+local_config_file = os.path.expanduser('~/labs/prne/local_config.txt')
+
+# Establish session and authenticate
+def create_session():
+    session = pexpect.spawn(f'telnet {ip_address}', encoding='utf-8', timeout=20)
+    session.expect('Username:')
+    session.sendline(username)
+    session.expect('Password:')
+    session.sendline(password)
+    session.expect('#')
+    return session
+
+# Compare Running vs Startup Configuration
+def compare_running_startup(session):
+    session.sendline("show running-config")
+    session.expect('#')
+    running_config = session.before.splitlines()
+    
+    session.sendline("show startup-config")
+    session.expect('#')
+    startup_config = session.before.splitlines()
+    
+    differences = list(difflib.unified_diff(startup_config, running_config, lineterm=''))
+    print("\nDifferences between running and startup configurations:")
+    for line in differences:
+        print(line)
+
+# Compare Running Configuration with Local Offline Version
+def compare_with_local(session):
+    session.sendline("show running-config")
+    session.expect('#')
+    running_config = session.before.splitlines()
+
+    with open(local_config_file, 'r') as file:
+        local_config = file.readlines()
+
+    differences = list(difflib.unified_diff(local_config, running_config, lineterm=''))
+    print("\nDifferences between running configuration and local offline version:")
+    for line in differences:
+        print(line)
+
+# Check Hardening Guidelines
+def check_hardening(session):
+    hardening_checks = {
+        "Enable SSH": "ip ssh version 2",
+        "Password Encryption": "service password-encryption",
+        "Disable HTTP Server": "no ip http server",
+    }
+    
+    hardening_results = {}
+    for check, command in hardening_checks.items():
+        session.sendline("show running-config | include " + command)
+        session.expect('#')
+        output = session.before
+        hardening_results[check] = command in output
+
+    print("\nCisco Hardening Check Results:")
+    for check, status in hardening_results.items():
+        print(f"{check}: {'Passed' if status else 'Failed'}")
+
+# Enable Syslog
+def enable_syslog(session, syslog_ip='192.168.56.50'):
+    session.sendline("configure terminal")
+    session.expect('#')
+    session.sendline(f"logging host {syslog_ip}")
+    session.expect('#')
+    session.sendline("end")
+    session.expect('#')
+    print("\nSyslog has been enabled and configured to send logs to", syslog_ip)
+
+# Main function to run selected option
+def main():
+    session = create_session()
+    print("Choose an action:")
+    print("1: Compare Running vs Startup Configuration")
+    print("2: Compare Running Configuration with Local Offline Version")
+    print("3: Check Cisco Hardening Guidelines")
+    print("4: Enable Syslog")
+
+    choice = input("Enter your choice (1-4): ")
+    if choice == '1':
+        compare_running_startup(session)
+    elif choice == '2':
+        compare_with_local(session)
+    elif choice == '3':
+        check_hardening(session)
+    elif choice == '4':
+        enable_syslog(session)
+    else:
+        print("Invalid choice. Exiting.")
+
+    session.sendline("exit")
+
+# Run the main function
+if __name__ == "__main__":
+    main()
